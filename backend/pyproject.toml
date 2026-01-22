@@ -1,0 +1,18 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.125.0",
+    "httpx>=0.24.0",
+    "openai>=1.0.0",
+    "passlib>=1.7.4",
+    "psycopg2-binary>=2.9.11",
+    "pyjwt>=2.10.1",
+    "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.21",
+    "sqlmodel>=0.0.27",
+    "uvicorn>=0.38.0",
+]
