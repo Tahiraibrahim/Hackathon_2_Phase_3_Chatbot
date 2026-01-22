@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from openai import OpenAI
+import uvicorn
 
 # --- FIX: Changed 'db' to 'database' and removed 'backend.' prefix ---
 from database import create_db_and_tables, get_session
@@ -537,3 +538,14 @@ def delete_todo(task_id: int, user_id: str = Depends(get_current_user), session:
     if result["status"] == "error":
         raise HTTPException(404, result["message"])
     return None
+
+# =============================================================================
+# ENVIRONMENT AGNOSTIC STARTUP
+# =============================================================================
+
+if __name__ == "__main__":
+    # Get port from environment variable (Render) or default to 8000 (Local)
+    port = int(os.environ.get("PORT", 8000))
+    # In production (Render), reload should be False
+    reload = os.environ.get("ENVIRONMENT") != "production"
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload)
