@@ -1,0 +1,57 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# ----------------------
+# PYTHON BACKEND (Important)
+# ----------------------
+# Virtual Environment (Isay upload nahi karna chahiye)
+.venv/
+venv/
+env/
+
+# Python Cache (Trash files)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Backend Database (Agar local file hai to)
+*.sqlite3
+*.db
+
+# OS Generated files
+.DS_Store
+Thumbs.db
