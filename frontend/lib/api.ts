@@ -77,7 +77,7 @@ const getTokenFromCookie = (): string | null => {
  * CRITICAL FALLBACK: If authClient fails, reads token directly from cookies
  */
 const getConfigWithToken = async (token?: string) => {
-  let finalToken = token;
+  let finalToken: string | null | undefined = token;
 
   // If no token provided, try to get it from authClient with retries
   if (!finalToken) {

@@ -59,34 +59,14 @@ export default function ChatInterface({ onTaskChange }: ChatInterfaceProps) {
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
     api: "/api/chat",
-    headers: async () => {
-      // CRITICAL: Wait for and fetch the FRESH session token before sending request
-      let token: string | null = null;
-      let retries = 3;
+    // Custom fetch with 30-second timeout and dynamic Authorization header
+    fetch: async (input, init) => {
+      // Get token dynamically
+      let token: string | null | undefined = sessionToken;
 
-      // Retry mechanism to ensure session is loaded
-      while (retries > 0 && !token) {
-        try {
-          const currentSession = await authClient.getSession();
-          token = currentSession.data?.session?.token || null;
-
-          if (!token) {
-            console.warn(`⚠️ No token found from authClient, retrying... (${retries} attempts left)`);
-            await new Promise(resolve => setTimeout(resolve, 300)); // Wait 300ms before retry
-            retries--;
-          }
-        } catch (error) {
-          console.error("Failed to fetch session from authClient:", error);
-          retries--;
-          if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-          }
-        }
-      }
-
-      // CRITICAL FALLBACK: If authClient failed, try reading from cookies directly
+      // FALLBACK: If no token from hook, try reading from cookies directly
       if (!token) {
-        console.warn("⚠️ authClient.getSession() failed, attempting cookie fallback...");
+        console.warn("⚠️ No token from session hook, attempting cookie fallback...");
         token = getTokenFromCookie();
 
         if (token) {
@@ -94,26 +74,25 @@ export default function ChatInterface({ onTaskChange }: ChatInterfaceProps) {
         }
       }
 
-      // BLOCK REQUEST if no token is available after all attempts
+      // BLOCK REQUEST if no token is available
       if (!token) {
-        console.error("❌ CRITICAL: No authentication token available after retries and cookie fallback");
+        console.error("❌ CRITICAL: No authentication token available");
         throw new Error("Authentication required. Please log in again.");
       }
 
       console.log("✅ ChatInterface - Token Present:", !!token, "Length:", token.length);
 
-      return {
-        "Authorization": `Bearer ${token}`,
-      };
-    },
-    // Custom fetch with 30-second timeout to handle slow database cold-start
-    fetch: async (input, init) => {
+      // Add Authorization header to the request
+      const headers = new Headers(init?.headers);
+      headers.set("Authorization", `Bearer ${token}`);
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds
 
       try {
         const response = await fetch(input, {
           ...init,
+          headers,
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
