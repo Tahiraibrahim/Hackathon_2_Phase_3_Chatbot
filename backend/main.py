@@ -42,7 +42,13 @@ app = FastAPI(title="Todo AI Assistant API", version="1.0.0")
 # CORS Setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://hackathon-2-phase-3.vercel.app",
+        "https://hackathon-2-phase-3-i8v5uznaw-tahira-ibrahims-projects-e1528e85.vercel.app",
+        "https://hackathon-2-phase-3-nnlu81zw0-tahira-ibrahims-projects-e1528e85.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
