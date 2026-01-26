@@ -1,13 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session, select
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Annotated, Optional
 from datetime import datetime, timezone, timedelta
 from urllib.parse import unquote
+import secrets
+import bcrypt
+import uuid
 
 from db import get_session
-from models import User, Session as SessionModel
+from models import User, Session as SessionModel, Account
 
 # Expiry buffer to handle timezone/clock skew issues
 EXPIRY_BUFFER_MINUTES = 5
@@ -40,6 +43,65 @@ class SessionResponse(BaseModel):
 class GetSessionResponse(BaseModel):
     user: UserResponse
     session: SessionResponse
+
+class SignUpRequest(BaseModel):
+    email: EmailStr
+    password: str
+    name: Optional[str] = None
+
+class SignInRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class AuthResponse(BaseModel):
+    user: UserResponse
+    session: SessionResponse
+    token: str  # Session token for client-side storage
+
+# --- Helper Functions ---
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt."""
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash."""
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def create_session_token() -> str:
+    """Generate a secure random session token."""
+    return secrets.token_urlsafe(32)
+
+def create_user_session(
+    session: Session,
+    user_id: str,
+    request: Request
+) -> SessionModel:
+    """Create a new session for a user."""
+    token = create_session_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)  # 7-day session
+
+    # Extract client info
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    session_record = SessionModel(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        token=token,
+        expires_at=expires_at,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
+    )
+
+    session.add(session_record)
+    session.commit()
+    session.refresh(session_record)
+
+    return session_record
 
 # --- Dependency ---
 def get_current_user(
@@ -278,4 +340,221 @@ def get_session(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Authentication error: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+@router.post("/sign-up/email", response_model=AuthResponse)
+def sign_up_email(
+    request_data: SignUpRequest,
+    request: Request,
+    session: Session = Depends(get_session)
+):
+    """
+    Sign up a new user with email and password.
+
+    This endpoint:
+    1. Checks if the email already exists
+    2. Creates a new User record
+    3. Creates an Account record with hashed password
+    4. Creates a session for the user
+    5. Returns user, session, and token
+    """
+    print("\n" + "="*80)
+    print("AUTH DEBUG - /sign-up/email endpoint")
+    print("="*80)
+    print(f"Email: {request_data.email}")
+    print(f"Name: {request_data.name}")
+
+    try:
+        # 1. Check if user already exists
+        statement = select(User).where(User.email == request_data.email)
+        existing_user = session.exec(statement).first()
+
+        if existing_user:
+            print(f"❌ User already exists with email: {request_data.email}")
+            print("="*80 + "\n")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User with this email already exists"
+            )
+
+        # 2. Create new User
+        user_id = str(uuid.uuid4())
+        new_user = User(
+            id=user_id,
+            email=request_data.email,
+            name=request_data.name,
+            email_verified=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+        session.add(new_user)
+
+        # 3. Create Account with hashed password
+        hashed_password = hash_password(request_data.password)
+        account = Account(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            account_id=request_data.email,  # Use email as account_id for email provider
+            provider_id="credential",  # Better Auth uses "credential" for email/password
+            password=hashed_password,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
+        )
+        session.add(account)
+
+        # Commit user and account
+        session.commit()
+        session.refresh(new_user)
+
+        print(f"✅ User created: {user_id}")
+        print(f"   Email: {new_user.email}")
+
+        # 4. Create session
+        session_record = create_user_session(session, user_id, request)
+
+        print(f"✅ Session created: {session_record.id}")
+        print(f"   Token: {session_record.token[:20]}...")
+        print("="*80 + "\n")
+
+        # 5. Return response
+        return AuthResponse(
+            user=UserResponse(
+                id=new_user.id,
+                email=new_user.email,
+                name=new_user.name,
+                emailVerified=new_user.email_verified,
+                image=new_user.image,
+                createdAt=new_user.created_at,
+                updatedAt=new_user.updated_at
+            ),
+            session=SessionResponse(
+                id=session_record.id,
+                userId=session_record.user_id,
+                token=session_record.token,
+                expiresAt=session_record.expires_at,
+                ipAddress=session_record.ip_address,
+                userAgent=session_record.user_agent,
+                createdAt=session_record.created_at,
+                updatedAt=session_record.updated_at
+            ),
+            token=session_record.token
+        )
+
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"❌ Sign-up error: {str(e)}")
+        print(f"   Error type: {type(e).__name__}")
+        print("="*80 + "\n")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sign-up failed: {str(e)}"
+        )
+
+
+@router.post("/sign-in/email", response_model=AuthResponse)
+def sign_in_email(
+    request_data: SignInRequest,
+    request: Request,
+    session: Session = Depends(get_session)
+):
+    """
+    Sign in an existing user with email and password.
+
+    This endpoint:
+    1. Finds the user by email
+    2. Verifies the password from the Account table
+    3. Creates a new session
+    4. Returns user, session, and token
+    """
+    print("\n" + "="*80)
+    print("AUTH DEBUG - /sign-in/email endpoint")
+    print("="*80)
+    print(f"Email: {request_data.email}")
+
+    try:
+        # 1. Find user by email
+        statement = select(User).where(User.email == request_data.email)
+        user = session.exec(statement).first()
+
+        if not user:
+            print(f"❌ User not found: {request_data.email}")
+            print("="*80 + "\n")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+
+        print(f"✓ User found: {user.id}")
+
+        # 2. Find account and verify password
+        account_statement = select(Account).where(
+            Account.user_id == user.id,
+            Account.provider_id == "credential"
+        )
+        account = session.exec(account_statement).first()
+
+        if not account or not account.password:
+            print(f"❌ No credential account found for user: {user.id}")
+            print("="*80 + "\n")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+
+        # Verify password
+        if not verify_password(request_data.password, account.password):
+            print(f"❌ Invalid password for user: {user.id}")
+            print("="*80 + "\n")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+
+        print(f"✓ Password verified for user: {user.id}")
+
+        # 3. Create new session
+        session_record = create_user_session(session, user.id, request)
+
+        print(f"✅ Sign-in successful for user: {user.id}")
+        print(f"   Session: {session_record.id}")
+        print(f"   Token: {session_record.token[:20]}...")
+        print("="*80 + "\n")
+
+        # 4. Return response
+        return AuthResponse(
+            user=UserResponse(
+                id=user.id,
+                email=user.email,
+                name=user.name,
+                emailVerified=user.email_verified,
+                image=user.image,
+                createdAt=user.created_at,
+                updatedAt=user.updated_at
+            ),
+            session=SessionResponse(
+                id=session_record.id,
+                userId=session_record.user_id,
+                token=session_record.token,
+                expiresAt=session_record.expires_at,
+                ipAddress=session_record.ip_address,
+                userAgent=session_record.user_agent,
+                createdAt=session_record.created_at,
+                updatedAt=session_record.updated_at
+            ),
+            token=session_record.token
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Sign-in error: {str(e)}")
+        print(f"   Error type: {type(e).__name__}")
+        print("="*80 + "\n")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sign-in failed: {str(e)}"
         )
