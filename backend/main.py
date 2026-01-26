@@ -39,16 +39,35 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(title="Todo AI Assistant API", version="1.0.0")
 
-# CORS Setup
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# CORS Setup - Read from environment variable or use defaults
+def get_allowed_origins():
+    """Get CORS allowed origins from environment or use defaults."""
+    # Try to read from environment variable (comma-separated list)
+    env_origins = os.getenv("ALLOWED_ORIGINS") or os.getenv("BETTER_AUTH_TRUSTED_ORIGINS")
+
+    # Default origins
+    default_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://hackathon-2-phase-3.vercel.app",
         "https://hackathon-2-phase-3-i8v5uznaw-tahira-ibrahims-projects-e1528e85.vercel.app",
         "https://hackathon-2-phase-3-nnlu81zw0-tahira-ibrahims-projects-e1528e85.vercel.app"
-    ],
+    ]
+
+    if env_origins:
+        # Parse comma-separated origins and combine with defaults
+        env_list = [origin.strip() for origin in env_origins.split(",") if origin.strip()]
+        # Combine and deduplicate
+        all_origins = list(set(default_origins + env_list))
+        logger.info(f"🌐 CORS: Using {len(all_origins)} origins (including env vars)")
+        return all_origins
+
+    logger.info(f"🌐 CORS: Using {len(default_origins)} default origins")
+    return default_origins
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
