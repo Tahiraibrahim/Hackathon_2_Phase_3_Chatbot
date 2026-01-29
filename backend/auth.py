@@ -352,6 +352,8 @@ def sign_up_email(
     """
     Sign up a new user with email and password.
 
+    ⚠️ PUBLIC ENDPOINT - No authentication required (users cannot be logged in before signup)
+
     This endpoint:
     1. Checks if the email already exists
     2. Creates a new User record
@@ -359,7 +361,7 @@ def sign_up_email(
     4. Creates a session for the user
     5. Returns user, session, and token
     """
-    # Force redeploy fix - ensure auth routes are deployed
+    # Force redeploy - signup must be public
     print("\n" + "="*80)
     print("AUTH DEBUG - /sign-up/email endpoint")
     print("="*80)
