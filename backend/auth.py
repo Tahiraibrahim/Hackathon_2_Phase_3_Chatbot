@@ -359,6 +359,7 @@ def sign_up_email(
     4. Creates a session for the user
     5. Returns user, session, and token
     """
+    # Force redeploy fix - ensure auth routes are deployed
     print("\n" + "="*80)
     print("AUTH DEBUG - /sign-up/email endpoint")
     print("="*80)
