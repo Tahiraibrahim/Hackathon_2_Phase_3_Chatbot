@@ -343,7 +343,7 @@ def get_session(
         )
 
 
-@router.post("/sign-up/email", response_model=AuthResponse)
+@router.post("/sign-up/email", response_model=AuthResponse, dependencies=[])
 def sign_up_email(
     request_data: SignUpRequest,
     request: Request,
@@ -458,7 +458,7 @@ def sign_up_email(
         )
 
 
-@router.post("/sign-in/email", response_model=AuthResponse)
+@router.post("/sign-in/email", response_model=AuthResponse, dependencies=[])
 def sign_in_email(
     request_data: SignInRequest,
     request: Request,
